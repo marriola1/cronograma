@@ -1,39 +1,81 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, date
+from datetime import date
 
+# Título de la app
 st.title("📅 Cronograma de Actividades por Cliente")
 
-# Cargar datos iniciales
-data = [
-    {"Cliente": "Argos", "Actividad": "Enviar reporte", "Fecha Entrega": "2025-06-14", "Confirmado": False},
-    {"Cliente": "BAC", "Actividad": "Aplicar pagos", "Fecha Entrega": "2025-06-12", "Confirmado": False},
-    {"Cliente": "Cemaco", "Actividad": "Planilla mensual", "Fecha Entrega": "2025-06-10", "Confirmado": False},
-]
+# Cargar archivo Excel
+excel_file = 'FORMATO DE CRONOGRAMA CONTA.xlsm'
 
-df = pd.DataFrame(data)
+# Leer las hojas disponibles
+xls = pd.ExcelFile(excel_file)
+sheet_names = xls.sheet_names
 
-# Mostrar tabla con botones
-for i, row in df.iterrows():
-    st.markdown(f"### Cliente: {row['Cliente']}")
-    st.write(f"📝 Actividad: {row['Actividad']}")
-    st.write(f"📆 Fecha programada: {row['Fecha Entrega']}")
-    
-    # Confirmar entrega
-    confirm = st.checkbox("✅ Confirmar entrega", key=i)
-    df.at[i, "Confirmado"] = confirm
+# Selector de mes (hoja)
+selected_month = st.selectbox("Selecciona el mes", sheet_names)
+df = pd.read_excel(xls, sheet_name=selected_month, header=1)
 
-    # Evaluar estado
-    fecha_entrega = datetime.strptime(row["Fecha Entrega"], "%Y-%m-%d").date()
-    hoy = date.today()
+# Limpiar columnas
+columnas_validas = [col for col in df.columns if isinstance(col, str) and "Cliente" in df.columns]
+df = df.dropna(subset=['Cliente', 'Actividad'], how='all')
 
-    if confirm and hoy == fecha_entrega:
-        st.success("✔️ Entregado a tiempo")
-    elif confirm and hoy > fecha_entrega:
-        st.error("❌ Entregado tarde")
-    elif not confirm and hoy > fecha_entrega:
-        st.warning("⚠️ No se ha entregado")
-    else:
-        st.info("⏳ Pendiente")
+# Unificar columnas necesarias
+columnas = {
+    'Cliente': 'Cliente',
+    'Actividad': 'Actividad',
+    'Fecha Semana 1': 'Fecha Semana 1',
+    'Confirmacion': 'Confirmacion',
+    'Estado': 'Estado'
+}
 
-    st.markdown("---")
+# Filtro por cliente
+clientes = df['Cliente'].dropna().unique().tolist()
+cliente_filtrado = st.selectbox("Filtrar por cliente", ["Todos"] + clientes)
+
+if cliente_filtrado != "Todos":
+    df = df[df['Cliente'] == cliente_filtrado]
+
+# Mostrar tabla con resumen por semana
+st.subheader("📋 Tareas")
+
+total = 0
+at_tiempo = 0
+fuera_tiempo = 0
+pendientes = 0
+
+for index, row in df.iterrows():
+    for semana in range(1, 6):
+        fecha_col = f'Fecha Semana {semana}'
+        conf_col = 'Confirmacion'
+
+        if fecha_col in row and pd.notna(row[fecha_col]):
+            total += 1
+            fecha_entrega = pd.to_datetime(row[fecha_col]).date()
+            hoy = date.today()
+            confirmacion = bool(row.get(conf_col, False))
+
+            st.markdown(f"### 🧾 {row['Cliente']} - {row['Actividad']}")
+            st.write(f"📅 Fecha: {fecha_entrega}")
+
+            if confirmacion and hoy == fecha_entrega:
+                st.success("✔️ Entregado a tiempo")
+                at_tiempo += 1
+            elif confirmacion and hoy > fecha_entrega:
+                st.error("❌ Entregado tarde")
+                fuera_tiempo += 1
+            elif not confirmacion and hoy > fecha_entrega:
+                st.warning("⚠️ No se ha entregado")
+                pendientes += 1
+            else:
+                st.info("⏳ Aún dentro de plazo")
+
+            st.markdown("---")
+
+# Resumen
+st.subheader("📊 Resumen del mes")
+st.write(f"🔢 Total de tareas: {total}")
+st.write(f"✅ A tiempo: {at_tiempo}")
+st.write(f"❌ Fuera de tiempo: {fuera_tiempo}")
+st.write(f"⚠️ Pendientes vencidas: {pendientes}")
+
